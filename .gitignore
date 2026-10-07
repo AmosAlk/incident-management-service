@@ -25,3 +25,6 @@ staticfiles/
 .idea/ 
 .DS_Store 
 Thumbs.db
+
+# Miscallaneous
+commands.txt
