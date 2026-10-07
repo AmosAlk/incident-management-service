@@ -174,3 +174,196 @@ def test_user_cannot_retrieve_incident_from_another_organisation() -> None:
     )
 
     assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+@pytest.mark.django_db
+def test_analyst_can_update_incident() -> None:
+    user = get_user_model().objects.create_user(
+        username="alice",
+    )
+    organisation = Organisation.objects.create(
+        name="Acme Security AB",
+    )
+    OrganisationMembership.objects.create(
+        organisation=organisation,
+        user=user,
+        role=OrganisationMembership.Role.ANALYST,
+    )
+
+    incident = Incident.objects.create(
+        organisation=organisation,
+        title="Suspicious login",
+        description="An unusual login was detected.",
+        severity=Incident.Severity.HIGH,
+        created_by=user,
+    )
+
+    client = APIClient()
+    client.force_authenticate(user=user)
+
+    response = client.patch(
+        reverse(
+            "incidents:detail",
+            kwargs={"pk": incident.id},
+        ),
+        {
+            "status": Incident.Status.INVESTIGATING,
+        },
+        format="json",
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+
+    # Must be loaded from db after to see the change, may not be recorded
+    # in memory.
+    incident.refresh_from_db()
+
+    assert incident.status == Incident.Status.INVESTIGATING
+
+
+@pytest.mark.django_db
+def test_viewer_cannot_update_incident() -> None:
+    viewer = get_user_model().objects.create_user(
+        username="viewer",
+    )
+    creator = get_user_model().objects.create_user(
+        username="creator",
+    )
+    organisation = Organisation.objects.create(
+        name="Acme Security AB",
+    )
+
+    OrganisationMembership.objects.create(
+        organisation=organisation,
+        user=viewer,
+        role=OrganisationMembership.Role.VIEWER,
+    )
+
+    incident = Incident.objects.create(
+        organisation=organisation,
+        title="Suspicious login",
+        description="An unusual login was detected.",
+        severity=Incident.Severity.HIGH,
+        created_by=creator,
+    )
+
+    client = APIClient()
+    client.force_authenticate(user=viewer)
+
+    response = client.patch(
+        reverse(
+            "incidents:detail",
+            kwargs={"pk": incident.id},
+        ),
+        {
+            "severity": Incident.Severity.CRITICAL,
+        },
+        format="json",
+    )
+
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    incident.refresh_from_db()
+
+    assert incident.severity == Incident.Severity.HIGH
+
+
+@pytest.mark.django_db
+def test_incident_cannot_skip_from_open_to_closed() -> None:
+    user = get_user_model().objects.create_user(
+        username="alice",
+    )
+    organisation = Organisation.objects.create(
+        name="Acme Security AB",
+    )
+
+    OrganisationMembership.objects.create(
+        organisation=organisation,
+        user=user,
+        role=OrganisationMembership.Role.ANALYST,
+    )
+
+    incident = Incident.objects.create(
+        organisation=organisation,
+        title="Suspicious login",
+        description="An unusual login was detected.",
+        severity=Incident.Severity.HIGH,
+        created_by=user,
+    )
+
+    client = APIClient()
+    client.force_authenticate(user=user)
+
+    response = client.patch(
+        reverse(
+            "incidents:detail",
+            kwargs={"pk": incident.id},
+        ),
+        {
+            "status": Incident.Status.CLOSED,
+        },
+        format="json",
+    )
+
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    incident.refresh_from_db()
+
+    assert incident.status == Incident.Status.OPEN
+
+
+@pytest.mark.django_db
+def test_incident_cannot_be_assigned_to_user_from_another_organisation() -> None:
+    alice = get_user_model().objects.create_user(
+        username="alice",
+    )
+    bob = get_user_model().objects.create_user(
+        username="bob",
+    )
+
+    acme = Organisation.objects.create(
+        name="Acme Security AB",
+    )
+    northstar = Organisation.objects.create(
+        name="Northstar Systems AB",
+    )
+
+    OrganisationMembership.objects.create(
+        organisation=acme,
+        user=alice,
+        role=OrganisationMembership.Role.ANALYST,
+    )
+
+    OrganisationMembership.objects.create(
+        organisation=northstar,
+        user=bob,
+        role=OrganisationMembership.Role.ANALYST,
+    )
+
+    incident = Incident.objects.create(
+        organisation=acme,
+        title="Suspicious login",
+        description="An unusual login was detected.",
+        severity=Incident.Severity.HIGH,
+        created_by=alice,
+    )
+
+    client = APIClient()
+    client.force_authenticate(user=alice)
+
+    response = client.patch(
+        reverse(
+            "incidents:detail",
+            kwargs={"pk": incident.id},
+        ),
+        {
+            "assigned_to": bob.id,
+        },
+        format="json",
+    )
+
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    incident.refresh_from_db()
+
+    assert incident.assigned_to is None

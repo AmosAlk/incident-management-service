@@ -6,7 +6,8 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from incidents.models import Incident
-from incidents.serializers import IncidentSerializer
+from incidents.permissions import CanModifyIncident
+from incidents.serializers import IncidentSerializer, IncidentUpdateSerializer
 from organisations.models import OrganisationMembership
 
 
@@ -79,12 +80,20 @@ class IncidentListCreateView(generics.ListCreateAPIView):
         serializer.save(created_by=self.request.user)
 
 
-# Retrieve ONE object. This is how RetrieveAPIView is defined.
 # Since the retrieved UUID is called pk, DRF can automatically
 # pass it to IncidentDetailView from incidents/urls.py/
-class IncidentDetailView(generics.RetrieveAPIView):
-    serializer_class = IncidentSerializer
-    permission_classes = [IsAuthenticated]
+class IncidentDetailView(generics.RetrieveUpdateAPIView):
+    serializer_class = IncidentUpdateSerializer
+    permission_classes = [
+        IsAuthenticated,
+        CanModifyIncident,
+    ]
+    http_method_names = [
+        "get",
+        "patch",
+        "head",
+        "options",
+    ]
 
     def get_queryset(self):
         return (
