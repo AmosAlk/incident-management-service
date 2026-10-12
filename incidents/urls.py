@@ -1,6 +1,10 @@
 from django.urls import path
 
-from incidents.views import IncidentDetailView, IncidentListCreateView
+from incidents.views import (
+    IncidentCommentListCreateView,
+    IncidentDetailView,
+    IncidentListCreateView,
+)
 
 app_name = "incidents"
 
@@ -17,5 +21,10 @@ urlpatterns = [
         "<uuid:pk>/",
         IncidentDetailView.as_view(),
         name="detail",
+    ),
+    path(
+        "<uuid:incident_id>/comments/",
+        IncidentCommentListCreateView.as_view(),
+        name="comment-list-create",
     ),
 ]

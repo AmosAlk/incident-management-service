@@ -1,3 +1,4 @@
+from django.shortcuts import get_object_or_404
 from rest_framework import generics
 from rest_framework.decorators import api_view
 from rest_framework.exceptions import PermissionDenied
@@ -5,9 +6,13 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 
-from incidents.models import Incident
+from incidents.models import Comment, Incident
 from incidents.permissions import CanModifyIncident
-from incidents.serializers import IncidentSerializer, IncidentUpdateSerializer
+from incidents.serializers import (
+    CommentSerializer,
+    IncidentSerializer,
+    IncidentUpdateSerializer,
+)
 from organisations.models import OrganisationMembership
 
 
@@ -104,4 +109,49 @@ class IncidentDetailView(generics.RetrieveUpdateAPIView):
                 "assigned_to",
             )
             .distinct()
+        )
+
+
+class IncidentCommentListCreateView(generics.ListCreateAPIView):
+    serializer_class = CommentSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_incident(self) -> Incident:
+        return get_object_or_404(
+            Incident.objects.filter(
+                organisation__memberships__user=self.request.user
+            ).distinct(),
+            # This comes from the aliases given in urls.py for incidents.
+            # So we are looking for the object with the above queryset
+            # and with the pk from the URL.
+            pk=self.kwargs["incident_id"],
+        )
+
+    def get_queryset(self):
+        incident = self.get_incident()
+
+        return Comment.objects.filter(incident=incident).select_related(
+            "author",
+            "incident",
+        )
+
+    def perform_create(self, serializer):
+        incident = self.get_incident()
+
+        membership = OrganisationMembership.objects.filter(
+            organisation=incident.organisation,
+            user=self.request.user,
+        ).first()
+
+        allowed_roles = {
+            OrganisationMembership.Role.ADMINISTRATOR,
+            OrganisationMembership.Role.ANALYST,
+        }
+
+        if membership is None or membership.role not in allowed_roles:
+            raise PermissionDenied("Your role cannot create comments.")
+
+        serializer.save(
+            incident=incident,
+            author=self.request.user,
         )

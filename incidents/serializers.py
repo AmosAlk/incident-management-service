@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from incidents.models import Incident
+from incidents.models import Comment, Incident
 from organisations.models import OrganisationMembership
 
 
@@ -119,3 +119,21 @@ class IncidentUpdateSerializer(serializers.ModelSerializer):
             )
 
         return value
+
+
+class CommentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Comment
+        fields = [
+            "id",
+            "incident",
+            "author",
+            "body",
+            "created_at",
+        ]
+        read_only_fields = [
+            "id",
+            "incident",
+            "author",
+            "created_at",
+        ]

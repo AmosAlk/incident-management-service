@@ -75,15 +75,28 @@ class Incident(models.Model):
         return self.title
 
 
-class Organisation(models.Model):
+class Comment(models.Model):
     id = models.UUIDField(
         primary_key=True,
         default=uuid.uuid4,
         editable=False,
     )
 
-    name = models.CharField(max_length=255)
+    incident = models.ForeignKey(
+        Incident,
+        on_delete=models.CASCADE,
+        related_name="comments",
+    )
+
+    author = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="incident_comments",
+    )
+
+    body = models.TextField()
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self) -> str:
-        return self.name
+        return f"Comment by {self.author} on {self.incident}"
