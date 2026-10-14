@@ -46,6 +46,7 @@ INSTALLED_APPS = [
     # Project applications
     "incidents.apps.IncidentsConfig",
     "organisations.apps.OrganisationsConfig",
+    "auditlog.apps.AuditlogConfig",
 ]
 
 

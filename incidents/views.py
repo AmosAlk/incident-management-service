@@ -1,3 +1,4 @@
+from django.db import transaction
 from django.shortcuts import get_object_or_404
 from rest_framework import generics
 from rest_framework.decorators import api_view
@@ -6,6 +7,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 
+from auditlog.models import AuditEvent
+from auditlog.services import record_audit_event
 from incidents.models import Comment, Incident
 from incidents.permissions import CanModifyIncident
 from incidents.serializers import (
@@ -79,10 +82,19 @@ class IncidentListCreateView(generics.ListCreateAPIView):
         if membership.role not in allowed_roles:
             raise PermissionDenied("Your role cannot create incidents.")
 
-        # Use the validated data to create an incident object, with
-        # the created_by field as the logged in user. We want to
-        # guarantee this is correct so we set it ourselves.
-        serializer.save(created_by=self.request.user)
+        # Crucial that this is carried out as an atomic transaction,
+        # we cannot save into the db without successfully recording
+        # the audit event.
+        with transaction.atomic():
+            incident = serializer.save(created_by=self.request.user)
+
+            record_audit_event(
+                organisation=incident.organisation,
+                actor=self.request.user,
+                action=AuditEvent.Action.INCIDENT_CREATED,
+                resource_type=AuditEvent.ResourceType.INCIDENT,
+                resource_id=incident.id,
+            )
 
 
 # Since the retrieved UUID is called pk, DRF can automatically
@@ -110,6 +122,31 @@ class IncidentDetailView(generics.RetrieveUpdateAPIView):
             )
             .distinct()
         )
+
+    def perform_update(self, serializer):
+        # Needed to remove a Pylance error due to serializer
+        # being Incident | None
+        if serializer.instance is None:
+            raise RuntimeError("Expected an existing Incident instance.")
+        # Before saving to the serializer, it contains the old
+        # status of the incident.
+        old_status = serializer.instance.status
+
+        with transaction.atomic():
+            incident = serializer.save()
+
+            if incident.status != old_status:
+                record_audit_event(
+                    organisation=incident.organisation,
+                    actor=self.request.user,
+                    action=AuditEvent.Action.INCIDENT_STATUS_CHANGED,
+                    resource_type=AuditEvent.ResourceType.INCIDENT,
+                    resource_id=incident.id,
+                    metadata={
+                        "old_status": old_status,
+                        "new_status": incident.status,
+                    },
+                )
 
 
 class IncidentCommentListCreateView(generics.ListCreateAPIView):
@@ -151,7 +188,19 @@ class IncidentCommentListCreateView(generics.ListCreateAPIView):
         if membership is None or membership.role not in allowed_roles:
             raise PermissionDenied("Your role cannot create comments.")
 
-        serializer.save(
-            incident=incident,
-            author=self.request.user,
-        )
+        with transaction.atomic():
+            comment = serializer.save(
+                incident=incident,
+                author=self.request.user,
+            )
+
+            record_audit_event(
+                organisation=incident.organisation,
+                actor=self.request.user,
+                action=AuditEvent.Action.COMMENT_CREATED,
+                resource_type=AuditEvent.ResourceType.INCIDENT,
+                resource_id=incident.id,
+                metadata={
+                    "comment_id": str(comment.id),
+                },
+            )

@@ -1,5 +1,6 @@
 from django.urls import path
 
+from auditlog.views import IncidentAuditEventListView
 from incidents.views import (
     IncidentCommentListCreateView,
     IncidentDetailView,
@@ -26,5 +27,10 @@ urlpatterns = [
         "<uuid:incident_id>/comments/",
         IncidentCommentListCreateView.as_view(),
         name="comment-list-create",
+    ),
+    path(
+        "<uuid:incident_id>/audit-events/",
+        IncidentAuditEventListView.as_view(),
+        name="audit-event-list",
     ),
 ]
