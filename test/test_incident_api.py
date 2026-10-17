@@ -1,5 +1,5 @@
 import pytest
-from django.contrib.auth import get_user_model
+from django.contrib.auth.models import User
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
@@ -10,7 +10,7 @@ from organisations.models import Organisation, OrganisationMembership
 
 @pytest.mark.django_db
 def test_analyst_can_create_incident() -> None:
-    user = get_user_model().objects.create_user(
+    user = User.objects.create_user(
         username="alice",
     )
     organisation = Organisation.objects.create(
@@ -51,7 +51,7 @@ def test_analyst_can_create_incident() -> None:
 
 @pytest.mark.django_db
 def test_viewer_cannot_create_incident() -> None:
-    user = get_user_model().objects.create_user(
+    user = User.objects.create_user(
         username="viewer",
     )
     organisation = Organisation.objects.create(
@@ -83,7 +83,7 @@ def test_viewer_cannot_create_incident() -> None:
 
 @pytest.mark.django_db
 def test_user_only_lists_incidents_from_their_organisation() -> None:
-    user = get_user_model().objects.create_user(
+    user = User.objects.create_user(
         username="alice",
     )
 
@@ -108,7 +108,7 @@ def test_user_only_lists_incidents_from_their_organisation() -> None:
         created_by=user,
     )
 
-    other_user = get_user_model().objects.create_user(
+    other_user = User.objects.create_user(
         username="bob",
     )
 
@@ -135,10 +135,10 @@ def test_user_only_lists_incidents_from_their_organisation() -> None:
 
 @pytest.mark.django_db
 def test_user_cannot_retrieve_incident_from_another_organisation() -> None:
-    alice = get_user_model().objects.create_user(
+    alice = User.objects.create_user(
         username="alice",
     )
-    bob = get_user_model().objects.create_user(
+    bob = User.objects.create_user(
         username="bob",
     )
 
@@ -178,7 +178,7 @@ def test_user_cannot_retrieve_incident_from_another_organisation() -> None:
 
 @pytest.mark.django_db
 def test_analyst_can_update_incident() -> None:
-    user = get_user_model().objects.create_user(
+    user = User.objects.create_user(
         username="alice",
     )
     organisation = Organisation.objects.create(
@@ -223,10 +223,10 @@ def test_analyst_can_update_incident() -> None:
 
 @pytest.mark.django_db
 def test_viewer_cannot_update_incident() -> None:
-    viewer = get_user_model().objects.create_user(
+    viewer = User.objects.create_user(
         username="viewer",
     )
-    creator = get_user_model().objects.create_user(
+    creator = User.objects.create_user(
         username="creator",
     )
     organisation = Organisation.objects.create(
@@ -270,7 +270,7 @@ def test_viewer_cannot_update_incident() -> None:
 
 @pytest.mark.django_db
 def test_incident_cannot_skip_from_open_to_closed() -> None:
-    user = get_user_model().objects.create_user(
+    user = User.objects.create_user(
         username="alice",
     )
     organisation = Organisation.objects.create(
@@ -314,10 +314,10 @@ def test_incident_cannot_skip_from_open_to_closed() -> None:
 
 @pytest.mark.django_db
 def test_incident_cannot_be_assigned_to_user_from_another_organisation() -> None:
-    alice = get_user_model().objects.create_user(
+    alice = User.objects.create_user(
         username="alice",
     )
-    bob = get_user_model().objects.create_user(
+    bob = User.objects.create_user(
         username="bob",
     )
 
@@ -357,7 +357,7 @@ def test_incident_cannot_be_assigned_to_user_from_another_organisation() -> None
             kwargs={"pk": incident.id},
         ),
         {
-            "assigned_to": bob.id,
+            "assigned_to": bob.id,  # type: ignore[attr-defined]
         },
         format="json",
     )
