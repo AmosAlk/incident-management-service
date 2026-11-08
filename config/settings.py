@@ -31,6 +31,17 @@ DEBUG = True
 
 ALLOWED_HOSTS = []
 
+# Keycloak
+
+OIDC_ISSUER = os.environ["OIDC_ISSUER"]
+OIDC_AUDIENCE = os.environ["OIDC_AUDIENCE"]
+OIDC_JWKS_URL = os.environ["OIDC_JWKS_URL"]
+
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "identity.authentication.OIDCBearerAuthentication",
+    ],
+}
 
 # Application definition
 
@@ -47,6 +58,8 @@ INSTALLED_APPS = [
     "incidents.apps.IncidentsConfig",
     "organisations.apps.OrganisationsConfig",
     "auditlog.apps.AuditlogConfig",
+    # Identity
+    "identity.apps.IdentityConfig",
 ]
 
 
