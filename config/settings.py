@@ -27,9 +27,22 @@ if not SECRET_KEY:
     raise RuntimeError("DJANGO_SECRET_KEY environment variable is not set")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = (
+    os.environ.get(
+        "DJANGO_DEBUG",
+        "False",
+    ).lower()
+    == "true"
+)
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = [
+    host.strip()
+    for host in os.environ.get(
+        "DJANGO_ALLOWED_HOSTS",
+        "",
+    ).split(",")
+    if host.strip()
+]
 
 # Keycloak
 

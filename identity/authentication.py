@@ -1,6 +1,9 @@
+import uuid
+
 import jwt
 from django.conf import settings
 from django.contrib.auth.models import User
+from django.db import IntegrityError, transaction
 from jwt import PyJWKClient
 from jwt.exceptions import PyJWKClientError, PyJWTError
 from rest_framework.authentication import (
@@ -9,12 +12,55 @@ from rest_framework.authentication import (
 )
 from rest_framework.exceptions import AuthenticationFailed
 
+from identity.models import ExternalIdentity
+
 
 class OIDCBearerAuthentication(BaseAuthentication):
     # Keycloak publishes its public signing keys through the JWKS endpoint.
     # We use those keys to verify that incoming access tokens were really
     # issued by Keycloak and have not been modified.
     jwks_client = PyJWKClient(settings.OIDC_JWKS_URL)
+
+    def get_or_create_user(self, claims) -> User:
+        issuer = claims["iss"]
+        subject = claims["sub"]
+
+        identity = (
+            ExternalIdentity.objects.select_related("user")
+            .filter(
+                issuer=issuer,
+                subject=subject,
+            )
+            .first()
+        )
+
+        if identity is not None:
+            return identity.user
+
+        try:
+            with transaction.atomic():
+                user = User.objects.create_user(
+                    username=f"oidc_{uuid.uuid4().hex}",
+                    email=claims.get("email", ""),
+                    first_name=claims.get("given_name", ""),
+                    last_name=claims.get("family_name", ""),
+                )
+
+                ExternalIdentity.objects.create(
+                    user=user,
+                    issuer=issuer,
+                    subject=subject,
+                )
+
+                return user
+
+        except IntegrityError:
+            identity = ExternalIdentity.objects.select_related("user").get(
+                issuer=issuer,
+                subject=subject,
+            )
+
+            return identity.user
 
     def authenticate(self, request):
         # Expected header:
@@ -79,20 +125,7 @@ class OIDCBearerAuthentication(BaseAuthentication):
             # to know that the token cannot be accepted.
             raise AuthenticationFailed("Invalid or expired access token.") from exc
 
-        # "sub" is Keycloak's stable identifier for the authenticated user.
-        # We use it to find the corresponding local Django User.
-        #
-        # The first time a Keycloak user calls the API, a local User is
-        # created so the rest of the application can still use normal
-        # Django relations such as OrganisationMembership.user.
-        user, _created = User.objects.get_or_create(
-            username=claims["sub"],
-            defaults={
-                "email": claims.get("email", ""),
-                "first_name": claims.get("given_name", ""),
-                "last_name": claims.get("family_name", ""),
-            },
-        )
+        user = self.get_or_create_user(claims)
 
         # DRF interprets this as:
         # request.user = user

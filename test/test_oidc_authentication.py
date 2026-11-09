@@ -4,11 +4,17 @@ import pytest
 from django.conf import settings
 from django.contrib.auth.models import User
 from django.urls import reverse
-from jwt.exceptions import PyJWKClientError
+from jwt.exceptions import (
+    ExpiredSignatureError,
+    InvalidAudienceError,
+    InvalidIssuerError,
+    PyJWKClientError,
+)
 from rest_framework import status
 from rest_framework.test import APIClient
 
 from identity.authentication import OIDCBearerAuthentication
+from identity.models import ExternalIdentity
 
 
 @pytest.mark.django_db
@@ -95,9 +101,15 @@ def test_valid_oidc_token_authenticates_user(
     # Everything below this point uses the real Django database.
     # authenticate() should have created a local User using the token's
     # "sub" claim as the username.
-    user = User.objects.get(username="keycloak-user-123")
+    identity = ExternalIdentity.objects.get(
+        issuer=settings.OIDC_ISSUER,
+        subject="keycloak-user-123",
+    )
+
+    user = identity.user
 
     assert user.email == "alice@example.test"
+    assert user.username.startswith("oidc_")
 
     # A Mock remembers how it was called.
     # This lets us check that our real authenticate() method called
@@ -134,4 +146,103 @@ def test_invalid_oidc_token_returns_401(
 
     # OIDCBearerAuthentication catches PyJWKClientError and turns it
     # into an authentication failure, which DRF returns as 401.
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+# If there already exists a django user with the username xyz,
+# then get_or_create_user through our keycloak authorisation
+# with sub = xyz must actually create a new user, and not see the
+# old user with the same username as the incoming sub.
+@pytest.mark.django_db
+@patch("identity.authentication.jwt.decode")
+@patch.object(
+    OIDCBearerAuthentication.jwks_client,
+    "get_signing_key_from_jwt",
+)
+def test_oidc_identity_does_not_reuse_matching_local_username(
+    mock_get_signing_key,
+    mock_decode,
+) -> None:
+    existing_user = User.objects.create_user(
+        username="keycloak-user-123",
+    )
+
+    signing_key = Mock()
+    signing_key.key = "public-key"
+    mock_get_signing_key.return_value = signing_key
+
+    mock_decode.return_value = {
+        "sub": "keycloak-user-123",
+        "iss": settings.OIDC_ISSUER,
+        "aud": settings.OIDC_AUDIENCE,
+        "iat": 1_700_000_000,
+        "exp": 4_102_444_800,
+        "email": "alice@example.test",
+    }
+
+    client = APIClient()
+
+    response = client.get(
+        reverse("incidents:list-create"),
+        HTTP_AUTHORIZATION="Bearer test-token",
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+
+    identity = ExternalIdentity.objects.get(
+        issuer=settings.OIDC_ISSUER,
+        subject="keycloak-user-123",
+    )
+
+    assert identity.user != existing_user
+
+
+# Ensures the response status code is 401 for Token expired,
+# Wrong audience and Wrong issuer as expected.
+# By injecting a side effect error.
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "decode_error",
+    [
+        ExpiredSignatureError("Token expired"),
+        InvalidAudienceError("Wrong audience"),
+        InvalidIssuerError("Wrong issuer"),
+    ],
+)
+@patch("identity.authentication.jwt.decode")
+@patch.object(
+    OIDCBearerAuthentication.jwks_client,
+    "get_signing_key_from_jwt",
+)
+def test_invalid_security_claims_return_401(
+    mock_get_signing_key,
+    mock_decode,
+    decode_error,
+) -> None:
+    signing_key = Mock()
+    signing_key.key = "public-key"
+    mock_get_signing_key.return_value = signing_key
+
+    mock_decode.side_effect = decode_error
+
+    client = APIClient()
+
+    response = client.get(
+        reverse("incidents:list-create"),
+        HTTP_AUTHORIZATION="Bearer test-token",
+    )
+
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+# Test authorisation header that is missing a JWT.
+@pytest.mark.django_db
+def test_malformed_bearer_header_returns_401() -> None:
+    client = APIClient()
+
+    response = client.get(
+        reverse("incidents:list-create"),
+        HTTP_AUTHORIZATION="Bearer",
+    )
+
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
