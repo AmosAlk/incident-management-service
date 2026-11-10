@@ -2,7 +2,7 @@
 
 ## Scope
 
-This threat model covers the Incident Operations Service API, its local OIDC authentication integration, PostgreSQL persistence, and multi-tenant authorisation model.
+This threat model covers the Incident Operations Service API, its local OIDC authentication integration, PostgreSQL persistence, multi-tenant authorisation model, and API throttling controls.
 
 ## Assets
 
@@ -13,7 +13,8 @@ The primary assets are:
 - audit history;
 - user identities;
 - authentication tokens;
-- database and application credentials.
+- database and application credentials;
+- API availability and application resources.
 
 ## Trust Boundaries
 
@@ -46,6 +47,10 @@ All client-provided values are considered untrusted until validated.
 | Business change succeeds without matching audit event | Database transaction wraps mutation and audit creation |
 | Organisation loses its final Administrator | Serializer/view validation prevents final Administrator removal/demotion |
 | Secret committed to Git | Secrets are loaded from `.env`, which is Git-ignored |
+| Authenticated user sends a large burst of API requests | Per-user burst throttling using DRF `UserRateThrottle` |
+| Authenticated user consumes excessive API capacity over a longer period | Per-user sustained throttling |
+| Authenticated user performs excessive state-changing requests | Separate write throttle for non-safe HTTP methods |
+| Client exceeds an applicable API rate limit | DRF rejects the request with `429 Too Many Requests` and a `Retry-After` response header |
 
 ## Residual Risks / Future Work
 
@@ -53,7 +58,8 @@ The following controls remain future work:
 
 - production HTTPS and HSTS configuration;
 - production Keycloak configuration rather than `start-dev`;
-- rate limiting and resource-consumption protection;
+- infrastructure-level rate limiting and denial-of-service protection;
+- distributed/shared throttle storage suitable for horizontally scaled deployments;
 - background-job security;
 - database least-privilege configuration;
 - production logging and monitoring;
@@ -73,4 +79,5 @@ The service follows several recurring principles:
 - client-controlled input must not control server-owned fields;
 - database constraints provide a final line of defence against invalid state;
 - security-critical multi-step writes should be atomic;
-- access tokens are only trusted after cryptographic and claim validation.
+- access tokens are only trusted after cryptographic and claim validation;
+- application-level throttling limits abusive request patterns but is not a substitute for infrastructure-level denial-of-service protection.
