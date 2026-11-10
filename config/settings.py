@@ -54,6 +54,25 @@ REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "identity.authentication.OIDCBearerAuthentication",
     ],
+    "DEFAULT_THROTTLE_CLASSES": [
+        "config.throttling.BurstRateThrottle",
+        "config.throttling.SustainedRateThrottle",
+        "config.throttling.WriteRateThrottle",
+    ],
+    "DEFAULT_THROTTLE_RATES": {
+        "burst": os.environ.get(
+            "DRF_THROTTLE_BURST_RATE",
+            "120/min",
+        ),
+        "sustained": os.environ.get(
+            "DRF_THROTTLE_SUSTAINED_RATE",
+            "10000/day",
+        ),
+        "write": os.environ.get(
+            "DRF_THROTTLE_WRITE_RATE",
+            "30/min",
+        ),
+    },
 }
 
 # Application definition
