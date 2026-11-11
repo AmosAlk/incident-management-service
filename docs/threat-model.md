@@ -51,6 +51,14 @@ All client-provided values are considered untrusted until validated.
 | Authenticated user consumes excessive API capacity over a longer period | Per-user sustained throttling |
 | Authenticated user performs excessive state-changing requests | Separate write throttle for non-safe HTTP methods |
 | Client exceeds an applicable API rate limit | DRF rejects the request with `429 Too Many Requests` and a `Retry-After` response header |
+| Production accidentally runs with Django debug mode enabled | Application refuses to start when `DEBUG=True` in the production environment |
+| Malicious or unexpected HTTP `Host` value | Explicit `ALLOWED_HOSTS` configuration is required in production |
+| Authentication tokens or session data transmitted over plain HTTP | Production configuration redirects HTTP to HTTPS |
+| Session or CSRF cookies transmitted over HTTP | Production configuration marks both cookies as secure |
+| Browser later reconnects to the production service using HTTP | Production configuration enables HSTS |
+| Application secrets committed to source control | Secrets are sourced from environment variables and local `.env` remains Git-ignored |
+| Development identity-provider configuration used as production configuration | Keycloak `start-dev` is explicitly documented as development-only |
+| Incorrect proxy trust permits forged HTTPS forwarding information | `SECURE_PROXY_SSL_HEADER` remains unset until a trusted reverse-proxy architecture is established |
 
 ## Residual Risks / Future Work
 
