@@ -13,10 +13,24 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 import os
 from pathlib import Path
 
+from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv()
+
+ENVIRONMENT = os.environ.get(
+    "DJANGO_ENVIRONMENT",
+    "development",
+)
+
+if ENVIRONMENT not in {
+    "development",
+    "production",
+}:
+    raise ImproperlyConfigured(
+        "DJANGO_ENVIRONMENT must be 'development' or 'production'."
+    )
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
@@ -27,13 +41,6 @@ if not SECRET_KEY:
     raise RuntimeError("DJANGO_SECRET_KEY environment variable is not set")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = (
-    os.environ.get(
-        "DJANGO_DEBUG",
-        "False",
-    ).lower()
-    == "true"
-)
 
 ALLOWED_HOSTS = [
     host.strip()
@@ -180,3 +187,52 @@ STATIC_URL = "static/"
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+
+def env_bool(name: str, default: bool = False) -> bool:
+    value = os.environ.get(name)
+
+    if value is None:
+        return default
+
+    return value.lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+DEBUG = env_bool(
+    "DJANGO_DEBUG",
+    default=ENVIRONMENT == "development",
+)
+
+if ENVIRONMENT == "production" and DEBUG:
+    raise ImproperlyConfigured("DEBUG must not be enabled in production.")
+
+if ENVIRONMENT == "production" and not ALLOWED_HOSTS:
+    raise ImproperlyConfigured("DJANGO_ALLOWED_HOSTS must be configured in production.")
+
+if ENVIRONMENT == "production":
+    SECURE_SSL_REDIRECT = True
+
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+
+    SECURE_HSTS_SECONDS = int(
+        os.environ.get(
+            "DJANGO_SECURE_HSTS_SECONDS",
+            "3600",
+        )
+    )
+
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = env_bool(
+        "DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS",
+        default=False,
+    )
+
+    SECURE_HSTS_PRELOAD = env_bool(
+        "DJANGO_SECURE_HSTS_PRELOAD",
+        default=False,
+    )
