@@ -236,3 +236,25 @@ if ENVIRONMENT == "production":
         "DJANGO_SECURE_HSTS_PRELOAD",
         default=False,
     )
+
+CELERY_BROKER_URL = (
+    f"amqp://{os.environ['RABBITMQ_USER']}:"
+    f"{os.environ['RABBITMQ_PASSWORD']}@"
+    f"{os.environ.get('RABBITMQ_HOST', '127.0.0.1')}:"
+    f"{os.environ.get('RABBITMQ_PORT', '5672')}/"
+    f"{os.environ.get('RABBITMQ_VHOST', 'incident_ops')}"
+)
+
+CELERY_TASK_SERIALIZER = "json"
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TIMEZONE = "UTC"
+
+EMAIL_BACKEND = os.environ.get(
+    "DJANGO_EMAIL_BACKEND",
+    "django.core.mail.backends.console.EmailBackend",
+)
+
+DEFAULT_FROM_EMAIL = os.environ.get(
+    "DJANGO_DEFAULT_FROM_EMAIL",
+    "incident-ops@example.test",
+)

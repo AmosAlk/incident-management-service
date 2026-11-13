@@ -2,7 +2,7 @@
 
 ## Scope
 
-This threat model covers the Incident Operations Service API, its local OIDC authentication integration, PostgreSQL persistence, multi-tenant authorisation model, and API throttling controls.
+This threat model covers the Incident Operations Service API, its local OIDC authentication integration, PostgreSQL persistence, multi-tenant authorisation model, API throttling controls, RabbitMQ message brokering, and Celery backgrounf workers.
 
 ## Assets
 
@@ -15,6 +15,8 @@ The primary assets are:
 - authentication tokens;
 - database and application credentials;
 - API availability and application resources.
+- queued task messages;
+- message-broker credentials;
 
 ## Trust Boundaries
 
@@ -25,6 +27,9 @@ The main trust boundaries are:
 3. Django API → Keycloak JWKS
 4. Django API → PostgreSQL
 5. Authenticated user → another organisation's resources
+6. Django API → RabbitMQ
+7. RabbitMQ → Celery worker
+8. Celery worker → PostgreSQL
 
 All client-provided values are considered untrusted until validated.
 
@@ -68,7 +73,7 @@ The following controls remain future work:
 - production Keycloak configuration rather than `start-dev`;
 - infrastructure-level rate limiting and denial-of-service protection;
 - distributed/shared throttle storage suitable for horizontally scaled deployments;
-- background-job security;
+- background-task retry, idempotency, acknowledgement, duplicate-execution, and failure-handling policy;
 - database least-privilege configuration;
 - production logging and monitoring;
 - backup and restore testing;
