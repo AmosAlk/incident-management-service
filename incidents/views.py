@@ -1,3 +1,6 @@
+from typing import cast
+
+from celery.contrib.django.task import DjangoTask
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 from rest_framework import generics
@@ -15,6 +18,9 @@ from incidents.serializers import (
     CommentSerializer,
     IncidentSerializer,
     IncidentUpdateSerializer,
+)
+from incidents.tasks import (
+    notify_administrators_incident_created,
 )
 from organisations.models import OrganisationMembership
 
@@ -95,6 +101,14 @@ class IncidentListCreateView(generics.ListCreateAPIView):
                 resource_type=AuditEvent.ResourceType.INCIDENT,
                 resource_id=incident.id,
             )
+            # Pylance fix.
+            # Must be delay on commit and not delay, otherwise the incident
+            # may not have been committed to the DB yet by the time the
+            # task gets around to running.
+            cast(
+                DjangoTask,
+                notify_administrators_incident_created,
+            ).delay_on_commit(str(incident.pk))
 
 
 # Since the retrieved UUID is called pk, DRF can automatically
