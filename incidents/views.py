@@ -24,6 +24,12 @@ from incidents.tasks import (
 )
 from organisations.models import OrganisationMembership
 
+from incidents.models import (
+    Comment,
+    Incident,
+    IncidentNotificationDelivery,
+)
+
 
 @api_view(["GET"])
 def health_check(_request: Request) -> Response:
@@ -101,6 +107,12 @@ class IncidentListCreateView(generics.ListCreateAPIView):
                 resource_type=AuditEvent.ResourceType.INCIDENT,
                 resource_id=incident.id,
             )
+
+            delivery = IncidentNotificationDelivery.objects.create(
+            incident=incident,
+            kind=IncidentNotificationDelivery.Kind.CREATED,
+            )
+
             # Pylance fix.
             # Must be delay on commit and not delay, otherwise the incident
             # may not have been committed to the DB yet by the time the
@@ -108,7 +120,7 @@ class IncidentListCreateView(generics.ListCreateAPIView):
             cast(
                 DjangoTask,
                 notify_administrators_incident_created,
-            ).delay_on_commit(str(incident.pk))
+            ).delay_on_commit(str(delivery.pk))
 
 
 # Since the retrieved UUID is called pk, DRF can automatically

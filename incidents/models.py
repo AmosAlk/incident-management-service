@@ -100,3 +100,59 @@ class Comment(models.Model):
 
     def __str__(self) -> str:
         return f"Comment by {self.author} on {self.incident}"
+
+
+class IncidentNotificationDelivery(models.Model):
+    class Kind(models.TextChoices): 
+        CREATED = "created", "Incident created"
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        SENT = "sent", "Sent"
+        SKIPPED = "skipped", "Skipped"
+
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False,
+    )
+
+    incident = models.ForeignKey(
+        Incident,
+        on_delete=models.CASCADE,
+        related_name="notification_deliveries",
+    )
+
+    kind = models.CharField(
+        max_length=32,
+        choices=Kind.choices,
+    )
+
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.PENDING,
+    )
+
+    attempts = models.PositiveIntegerField(default=0)
+
+    last_error = models.TextField(blank=True)
+
+    sent_at = models.DateTimeField(
+        null=True,
+        blank=True,
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["incident", "kind"],
+                name="unique_incident_notification_kind",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.incident} - {self.kind} - {self.status}"

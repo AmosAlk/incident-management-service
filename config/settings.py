@@ -258,3 +258,26 @@ DEFAULT_FROM_EMAIL = os.environ.get(
     "DJANGO_DEFAULT_FROM_EMAIL",
     "incident-ops@example.test",
 )
+
+CELERY_TASK_RETRY_ON_WORKER_LOST = True
+
+CELERY_TASK_PUBLISH_RETRY = True
+
+CELERY_TASK_PUBLISH_RETRY_POLICY = {
+    "max_retries": 5,
+    "interval_start": 0,
+    "interval_step": 0.5,
+    "interval_max": 2,
+}
+
+EMAIL_HOST = os.environ.get(
+    "DJANGO_EMAIL_HOST",
+    "127.0.0.1",
+)
+
+EMAIL_PORT = int(
+    os.environ.get(
+        "DJANGO_EMAIL_PORT",
+        "25",
+    )
+)
