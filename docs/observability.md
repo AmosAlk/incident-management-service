@@ -60,3 +60,21 @@ The Django process exposes metrics through:
 
 ```text
 GET /metrics/
+
+## Distributed Tracing
+
+The service uses OpenTelemetry for distributed tracing.
+
+Tracing currently instruments:
+
+- Django HTTP request handling
+- PostgreSQL operations through Psycopg
+- Celery task publication and execution
+
+Trace data is exported using OTLP/HTTP to Jaeger during local
+development.
+
+The local Jaeger UI is available at: 
+
+```text
+http://localhost:16686

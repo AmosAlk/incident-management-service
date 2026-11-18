@@ -3,10 +3,14 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
+from opentelemetry import trace
+
 from config.request_context import get_request_id
 
 STRUCTURED_FIELDS = (
     "request_id",
+    "trace_id",
+    "span_id",
     "method",
     "path",
     "status_code",
@@ -29,6 +33,16 @@ class RequestContextFilter(logging.Filter):
     ) -> bool:
         if getattr(record, "request_id", None) is None:
             record.request_id = get_request_id()
+
+        current_span = trace.get_current_span()
+        span_context = current_span.get_span_context()
+
+        if span_context.is_valid:
+            if getattr(record, "trace_id", None) is None:
+                record.trace_id = f"{span_context.trace_id:032x}"
+
+            if getattr(record, "span_id", None) is None:
+                record.span_id = f"{span_context.span_id:016x}"
 
         return True
 
