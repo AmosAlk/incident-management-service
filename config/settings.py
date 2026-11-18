@@ -104,6 +104,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "config.middleware.RequestIDMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -263,6 +264,8 @@ CELERY_TASK_RETRY_ON_WORKER_LOST = True
 
 CELERY_TASK_PUBLISH_RETRY = True
 
+CELERY_WORKER_HIJACK_ROOT_LOGGER = False
+
 CELERY_TASK_PUBLISH_RETRY_POLICY = {
     "max_retries": 5,
     "interval_start": 0,
@@ -281,3 +284,57 @@ EMAIL_PORT = int(
         "25",
     )
 )
+
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "filters": {
+        "request_context": {
+            "()": "config.logging.RequestContextFilter",
+        },
+    },
+    "formatters": {
+        "json": {
+            "()": "config.logging.JsonFormatter",
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "filters": [
+                "request_context",
+            ],
+            "formatter": "json",
+        },
+    },
+    "root": {
+        "handlers": [
+            "console",
+        ],
+        "level": "INFO",
+    },
+    "loggers": {
+        "django": {
+            "handlers": [
+                "console",
+            ],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "incidents": {
+            "handlers": [
+                "console",
+            ],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "api.request": {
+            "handlers": [
+                "console",
+            ],
+            "level": "INFO",
+            "propagate": False,
+        },
+    },
+}

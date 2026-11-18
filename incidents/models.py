@@ -103,7 +103,7 @@ class Comment(models.Model):
 
 
 class IncidentNotificationDelivery(models.Model):
-    class Kind(models.TextChoices): 
+    class Kind(models.TextChoices):
         CREATED = "created", "Incident created"
 
     class Status(models.TextChoices):

@@ -1,19 +1,16 @@
+import logging
 from typing import cast
 from unittest.mock import patch
 
 import pytest
 from celery.contrib.django.task import DjangoTask
+from celery.exceptions import Retry
 from django.contrib.auth.models import User
 from django.core import mail
 from django.test import override_settings
 from rest_framework import status
 from rest_framework.reverse import reverse
 from rest_framework.test import APIClient
-
-from unittest.mock import patch
-
-from celery.contrib.django.task import DjangoTask
-from celery.exceptions import Retry
 
 from incidents.models import (
     Incident,
@@ -30,7 +27,9 @@ from organisations.models import (
 
 @pytest.mark.django_db
 @override_settings(EMAIL_BACKEND=("django.core.mail.backends.locmem.EmailBackend"))
-def test_incident_notification_is_sent_to_administrator() -> None:
+def test_incident_notification_is_sent_to_administrator(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     administrator = User.objects.create_user(
         username="alice",
         email="alice@example.test",
@@ -65,12 +64,13 @@ def test_incident_notification_is_sent_to_administrator() -> None:
     )
 
     delivery = IncidentNotificationDelivery.objects.create(
-    incident=incident,
-    kind=IncidentNotificationDelivery.Kind.CREATED,
+        incident=incident,
+        kind=IncidentNotificationDelivery.Kind.CREATED,
     )
 
-    # Pylance fix here again
-    cast(DjangoTask, notify_administrators_incident_created).run(str(delivery.pk))
+    with caplog.at_level(logging.INFO, logger="incidents.tasks"):
+        cast(DjangoTask, notify_administrators_incident_created).run(str(delivery.pk))
+
     delivery.refresh_from_db()
 
     assert len(mail.outbox) == 1
@@ -79,6 +79,18 @@ def test_incident_notification_is_sent_to_administrator() -> None:
     assert delivery.status == IncidentNotificationDelivery.Status.SENT
     assert delivery.attempts == 1
     assert delivery.sent_at is not None
+
+    record = next(
+        record
+        for record in caplog.records
+        if record.getMessage() == "incident_notification_sent"
+    )
+
+    assert record.delivery_id == str(delivery.pk)
+    assert record.incident_id == str(incident.pk)
+    assert record.attempt == 1
+    assert record.recipient_count == 1
+
 
 @pytest.mark.django_db
 @patch("incidents.views.notify_administrators_incident_created.delay_on_commit")
@@ -117,19 +129,15 @@ def test_incident_creation_schedules_notification(
 
     incident = Incident.objects.get(pk=response.data["id"])
     delivery = IncidentNotificationDelivery.objects.get(
-    incident=incident,
-    kind=IncidentNotificationDelivery.Kind.CREATED,
+        incident=incident,
+        kind=IncidentNotificationDelivery.Kind.CREATED,
     )
 
     mock_delay_on_commit.assert_called_once_with(str(delivery.pk))
 
 
 @pytest.mark.django_db
-@override_settings(
-    EMAIL_BACKEND=(
-        "django.core.mail.backends.locmem.EmailBackend"
-    )
-)
+@override_settings(EMAIL_BACKEND=("django.core.mail.backends.locmem.EmailBackend"))
 def test_completed_notification_is_not_sent_twice() -> None:
     administrator = User.objects.create_user(
         username="alice",
@@ -163,22 +171,15 @@ def test_completed_notification_is_not_sent_twice() -> None:
         kind=IncidentNotificationDelivery.Kind.CREATED,
     )
 
-    cast(DjangoTask, notify_administrators_incident_created).run(
-        str(delivery.pk)
-    )
+    cast(DjangoTask, notify_administrators_incident_created).run(str(delivery.pk))
 
-    cast(DjangoTask, notify_administrators_incident_created).run(
-        str(delivery.pk)
-    )
+    cast(DjangoTask, notify_administrators_incident_created).run(str(delivery.pk))
 
     assert len(mail.outbox) == 1
 
     delivery.refresh_from_db()
 
-    assert (
-        delivery.status
-        == IncidentNotificationDelivery.Status.SENT
-    )
+    assert delivery.status == IncidentNotificationDelivery.Status.SENT
 
 
 @pytest.mark.django_db
@@ -192,8 +193,7 @@ def test_completed_notification_is_not_sent_twice() -> None:
     side_effect=Retry,
 )
 def test_temporary_email_failure_requests_retry(
-    mock_retry,
-    _mock_send_mail,
+    mock_retry, _mock_send_mail, caplog: pytest.LogCaptureFixture
 ) -> None:
     administrator = User.objects.create_user(
         username="alice",
@@ -227,20 +227,29 @@ def test_temporary_email_failure_requests_retry(
         kind=IncidentNotificationDelivery.Kind.CREATED,
     )
 
-    with pytest.raises(Retry):
-        cast(DjangoTask, notify_administrators_incident_created).run(
-            str(delivery.pk)
-        )
+    with caplog.at_level(logging.WARNING, logger="incidents.tasks"):
+        with pytest.raises(Retry):
+            cast(DjangoTask, notify_administrators_incident_created).run(
+                str(delivery.pk)
+            )
 
     delivery.refresh_from_db()
 
     assert delivery.attempts == 1
 
-    assert (
-        delivery.status
-        == IncidentNotificationDelivery.Status.PENDING
-    )
+    assert delivery.status == IncidentNotificationDelivery.Status.PENDING
 
     assert "OSError" in delivery.last_error
 
     mock_retry.assert_called_once()
+
+    record = next(
+        record
+        for record in caplog.records
+        if record.getMessage() == "incident_notification_retrying"
+    )
+
+    assert record.delivery_id == str(delivery.pk)
+    assert record.incident_id == str(incident.pk)
+    assert record.attempt == 1
+    assert record.error_type == "OSError"

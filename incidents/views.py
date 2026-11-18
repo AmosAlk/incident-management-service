@@ -1,4 +1,5 @@
 from typing import cast
+import logging
 
 from celery.contrib.django.task import DjangoTask
 from django.db import transaction
@@ -10,9 +11,10 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 
+
+
 from auditlog.models import AuditEvent
 from auditlog.services import record_audit_event
-from incidents.models import Comment, Incident
 from incidents.permissions import CanModifyIncident
 from incidents.serializers import (
     CommentSerializer,
@@ -29,6 +31,8 @@ from incidents.models import (
     Incident,
     IncidentNotificationDelivery,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @api_view(["GET"])
@@ -109,8 +113,8 @@ class IncidentListCreateView(generics.ListCreateAPIView):
             )
 
             delivery = IncidentNotificationDelivery.objects.create(
-            incident=incident,
-            kind=IncidentNotificationDelivery.Kind.CREATED,
+                incident=incident,
+                kind=IncidentNotificationDelivery.Kind.CREATED,
             )
 
             # Pylance fix.
@@ -121,6 +125,18 @@ class IncidentListCreateView(generics.ListCreateAPIView):
                 DjangoTask,
                 notify_administrators_incident_created,
             ).delay_on_commit(str(delivery.pk))
+
+        logger.info(
+            "incident_notification_scheduled",
+            extra={
+                "incident_id": str(
+                    incident.pk
+                ),
+                "delivery_id": str(
+                    delivery.pk
+                ),
+            },
+        )
 
 
 # Since the retrieved UUID is called pk, DRF can automatically
