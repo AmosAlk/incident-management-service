@@ -5,6 +5,10 @@ from uuid import uuid4
 
 from django.http import HttpRequest, HttpResponse
 
+from config.metrics import (
+    HTTP_REQUEST_DURATION_SECONDS,
+    HTTP_REQUESTS_TOTAL,
+)
 from config.request_context import (
     reset_request_id,
     set_request_id,
@@ -44,7 +48,7 @@ class RequestIDMiddleware:
 
         token = set_request_id(request_id)
 
-        request.request_id = request_id
+        request.request_id = request_id  # type: ignore
 
         started_at = time.perf_counter()
 
@@ -53,10 +57,24 @@ class RequestIDMiddleware:
         try:
             response = self.get_response(request)
 
+            duration_seconds = time.perf_counter() - started_at
+
             duration_ms = round(
-                (time.perf_counter() - started_at) * 1000,
+                duration_seconds * 1000,
                 2,
             )
+
+            status = str(response.status_code)
+
+            HTTP_REQUESTS_TOTAL.labels(
+                method=request.method,
+                status=status,
+            ).inc()
+
+            HTTP_REQUEST_DURATION_SECONDS.labels(
+                method=request.method,
+                status=status,
+            ).observe(duration_seconds)
 
             response["X-Request-ID"] = request_id
 
@@ -74,10 +92,22 @@ class RequestIDMiddleware:
             return response
 
         except Exception:
+            duration_seconds = time.perf_counter() - started_at
+
             duration_ms = round(
-                (time.perf_counter() - started_at) * 1000,
+                duration_seconds * 1000,
                 2,
             )
+
+            HTTP_REQUESTS_TOTAL.labels(
+                method=request.method,
+                status="500",
+            ).inc()
+
+            HTTP_REQUEST_DURATION_SECONDS.labels(
+                method=request.method,
+                status="500",
+            ).observe(duration_seconds)
 
             logger.exception(
                 "request_failed",

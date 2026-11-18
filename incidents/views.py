@@ -1,5 +1,5 @@
-from typing import cast
 import logging
+from typing import cast
 
 from celery.contrib.django.task import DjangoTask
 from django.db import transaction
@@ -11,10 +11,14 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 
-
-
 from auditlog.models import AuditEvent
 from auditlog.services import record_audit_event
+from config.metrics import INCIDENTS_CREATED_TOTAL
+from incidents.models import (
+    Comment,
+    Incident,
+    IncidentNotificationDelivery,
+)
 from incidents.permissions import CanModifyIncident
 from incidents.serializers import (
     CommentSerializer,
@@ -25,12 +29,6 @@ from incidents.tasks import (
     notify_administrators_incident_created,
 )
 from organisations.models import OrganisationMembership
-
-from incidents.models import (
-    Comment,
-    Incident,
-    IncidentNotificationDelivery,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -126,15 +124,13 @@ class IncidentListCreateView(generics.ListCreateAPIView):
                 notify_administrators_incident_created,
             ).delay_on_commit(str(delivery.pk))
 
+        INCIDENTS_CREATED_TOTAL.inc()
+
         logger.info(
             "incident_notification_scheduled",
             extra={
-                "incident_id": str(
-                    incident.pk
-                ),
-                "delivery_id": str(
-                    delivery.pk
-                ),
+                "incident_id": str(incident.pk),
+                "delivery_id": str(delivery.pk),
             },
         )
 

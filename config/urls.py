@@ -1,6 +1,7 @@
 from django.contrib import admin
 from django.urls import include, path
 
+from config.views import metrics_view
 from incidents.views import health_check
 
 urlpatterns = [
@@ -11,4 +12,5 @@ urlpatterns = [
         "api/organisations/",
         include("organisations.urls"),
     ),
+    path("metrics/", metrics_view, name="metrics"),
 ]
