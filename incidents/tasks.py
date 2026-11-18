@@ -1,3 +1,4 @@
+import logging
 import smtplib
 
 from celery import shared_task
@@ -10,6 +11,9 @@ from django.utils import timezone
 
 from incidents.models import IncidentNotificationDelivery
 from organisations.models import OrganisationMembership
+
+
+logger = logging.getLogger(__name__)
 
 
 def retry_delay(retries: int) -> int:
@@ -31,19 +35,48 @@ def notify_administrators_incident_created(
     self: DjangoTask,
     delivery_id: str,
 ) -> None:
+    task_id = getattr(
+        self.request,
+        "id",
+        None,
+    )
+
     try:
         delivery = (
             IncidentNotificationDelivery.objects.select_related(
                 "incident__organisation"
             ).get(pk=delivery_id)
         )
+
     except IncidentNotificationDelivery.DoesNotExist:
+        logger.warning(
+            "incident_notification_delivery_missing",
+            extra={
+                "task_id": task_id,
+                "delivery_id": delivery_id,
+            },
+        )
         return
 
     if delivery.status in {
         IncidentNotificationDelivery.Status.SENT,
         IncidentNotificationDelivery.Status.SKIPPED,
     }:
+        logger.info(
+            "incident_notification_already_final",
+            extra={
+                "task_id": task_id,
+                "delivery_id": str(
+                    delivery.pk
+                ),
+                "incident_id": str(
+                    delivery.incident_id # type: ignore
+                ),
+                "delivery_status": (
+                    delivery.status
+                ),
+            },
+        )
         return
 
     incident = delivery.incident
@@ -73,6 +106,24 @@ def notify_administrators_incident_created(
                 "updated_at",
             ]
         )
+
+        logger.info(
+            "incident_notification_skipped",
+            extra={
+                "task_id": task_id,
+                "delivery_id": str(
+                    delivery.pk
+                ),
+                "incident_id": str(
+                    incident.pk
+                ),
+                "delivery_status": (
+                    delivery.status
+                ),
+                "recipient_count": 0,
+            },
+        )
+
         return
 
     IncidentNotificationDelivery.objects.filter(
@@ -82,15 +133,21 @@ def notify_administrators_incident_created(
     )
 
     delivery.refresh_from_db(
-        fields=["attempts"]
+        fields=[
+            "attempts",
+        ]
     )
 
     try:
         send_mail(
-            subject=f"New incident: {incident.title}",
+            subject=(
+                f"New incident: "
+                f"{incident.title}"
+            ),
             message=(
-                f"A new {incident.severity} severity incident "
-                f"has been created.\n\n"
+                f"A new {incident.severity} "
+                f"severity incident has been "
+                f"created.\n\n"
                 f"Title: {incident.title}\n"
                 f"Incident ID: {incident.pk}"
             ),
@@ -115,11 +172,35 @@ def notify_administrators_incident_created(
             ]
         )
 
+        countdown = retry_delay(
+            self.request.retries
+        )
+
+        logger.warning(
+            "incident_notification_retrying",
+            extra={
+                "task_id": task_id,
+                "delivery_id": str(
+                    delivery.pk
+                ),
+                "incident_id": str(
+                    incident.pk # type: ignore
+                ),
+                "attempt": (
+                    delivery.attempts
+                ),
+                "error_type": (
+                    type(exc).__name__
+                ),
+                "retry_in_seconds": (
+                    countdown
+                ),
+            },
+        )
+
         raise self.retry(
             exc=exc,
-            countdown=retry_delay(
-                self.request.retries
-            ),
+            countdown=countdown,
         )
 
     delivery.status = (
@@ -135,4 +216,24 @@ def notify_administrators_incident_created(
             "last_error",
             "updated_at",
         ]
+    )
+
+    logger.info(
+        "incident_notification_sent",
+        extra={
+            "task_id": task_id,
+            "delivery_id": str(
+                delivery.pk
+            ),
+            "incident_id": str(
+                incident.pk
+            ),
+            "delivery_status": (
+                delivery.status
+            ),
+            "attempt": delivery.attempts,
+            "recipient_count": len(
+                recipients
+            ),
+        },
     )
