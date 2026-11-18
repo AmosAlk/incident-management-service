@@ -8,6 +8,7 @@ from celery.exceptions import Retry
 from django.contrib.auth.models import User
 from django.core import mail
 from django.test import override_settings
+from prometheus_client import REGISTRY
 from rest_framework import status
 from rest_framework.reverse import reverse
 from rest_framework.test import APIClient
@@ -68,8 +69,29 @@ def test_incident_notification_is_sent_to_administrator(
         kind=IncidentNotificationDelivery.Kind.CREATED,
     )
 
-    with caplog.at_level(logging.INFO, logger="incidents.tasks"):
-        cast(DjangoTask, notify_administrators_incident_created).run(str(delivery.pk))
+    # Prometheus metrics are global process state, so record the
+    # current value before running the task rather than assuming
+    # that the counter starts at zero.
+    labels = {
+        "result": "sent",
+    }
+
+    before = REGISTRY.get_sample_value(
+        "incident_service_notification_deliveries_total",
+        labels,
+    )
+
+    if before is None:
+        before = 0.0
+
+    with caplog.at_level(
+        logging.INFO,
+        logger="incidents.tasks",
+    ):
+        cast(
+            DjangoTask,
+            notify_administrators_incident_created,
+        ).run(str(delivery.pk))
 
     delivery.refresh_from_db()
 
@@ -86,10 +108,18 @@ def test_incident_notification_is_sent_to_administrator(
         if record.getMessage() == "incident_notification_sent"
     )
 
-    assert record.delivery_id == str(delivery.pk)
-    assert record.incident_id == str(incident.pk)
-    assert record.attempt == 1
-    assert record.recipient_count == 1
+    assert record.delivery_id == str(delivery.pk)  # type: ignore
+    assert record.incident_id == str(incident.pk)  # type: ignore
+    assert record.attempt == 1  # type: ignore
+    assert record.recipient_count == 1  # type: ignore
+
+    after = REGISTRY.get_sample_value(
+        "incident_service_notification_deliveries_total",
+        labels,
+    )
+
+    assert after is not None
+    assert after == before + 1
 
 
 @pytest.mark.django_db
@@ -171,9 +201,10 @@ def test_completed_notification_is_not_sent_twice() -> None:
         kind=IncidentNotificationDelivery.Kind.CREATED,
     )
 
-    cast(DjangoTask, notify_administrators_incident_created).run(str(delivery.pk))
-
-    cast(DjangoTask, notify_administrators_incident_created).run(str(delivery.pk))
+    cast(
+        DjangoTask,
+        notify_administrators_incident_created,
+    ).run(str(delivery.pk))
 
     assert len(mail.outbox) == 1
 
@@ -193,7 +224,9 @@ def test_completed_notification_is_not_sent_twice() -> None:
     side_effect=Retry,
 )
 def test_temporary_email_failure_requests_retry(
-    mock_retry, _mock_send_mail, caplog: pytest.LogCaptureFixture
+    mock_retry,
+    _mock_send_mail,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     administrator = User.objects.create_user(
         username="alice",
@@ -227,18 +260,27 @@ def test_temporary_email_failure_requests_retry(
         kind=IncidentNotificationDelivery.Kind.CREATED,
     )
 
-    with caplog.at_level(logging.WARNING, logger="incidents.tasks"):
+    # Record the counter before the task runs because Prometheus
+    # metrics persist globally for the lifetime of the test process.
+    before = REGISTRY.get_sample_value("incident_service_notification_retries_total")
+
+    if before is None:
+        before = 0.0
+
+    with caplog.at_level(
+        logging.WARNING,
+        logger="incidents.tasks",
+    ):
         with pytest.raises(Retry):
-            cast(DjangoTask, notify_administrators_incident_created).run(
-                str(delivery.pk)
-            )
+            cast(
+                DjangoTask,
+                notify_administrators_incident_created,
+            ).run(str(delivery.pk))
 
     delivery.refresh_from_db()
 
     assert delivery.attempts == 1
-
     assert delivery.status == IncidentNotificationDelivery.Status.PENDING
-
     assert "OSError" in delivery.last_error
 
     mock_retry.assert_called_once()
@@ -249,7 +291,12 @@ def test_temporary_email_failure_requests_retry(
         if record.getMessage() == "incident_notification_retrying"
     )
 
-    assert record.delivery_id == str(delivery.pk)
-    assert record.incident_id == str(incident.pk)
-    assert record.attempt == 1
-    assert record.error_type == "OSError"
+    assert record.delivery_id == str(delivery.pk)  # type: ignore
+    assert record.incident_id == str(incident.pk)  # type: ignore
+    assert record.attempt == 1  # type: ignore
+    assert record.error_type == "OSError"  # type: ignore
+
+    after = REGISTRY.get_sample_value("incident_service_notification_retries_total")
+
+    assert after is not None
+    assert after == before + 1

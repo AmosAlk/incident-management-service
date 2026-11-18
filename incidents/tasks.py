@@ -9,9 +9,12 @@ from django.core.mail import send_mail
 from django.db.models import F
 from django.utils import timezone
 
+from config.metrics import (
+    NOTIFICATION_DELIVERIES_TOTAL,
+    NOTIFICATION_RETRIES_TOTAL,
+)
 from incidents.models import IncidentNotificationDelivery
 from organisations.models import OrganisationMembership
-
 
 logger = logging.getLogger(__name__)
 
@@ -42,11 +45,9 @@ def notify_administrators_incident_created(
     )
 
     try:
-        delivery = (
-            IncidentNotificationDelivery.objects.select_related(
-                "incident__organisation"
-            ).get(pk=delivery_id)
-        )
+        delivery = IncidentNotificationDelivery.objects.select_related(
+            "incident__organisation"
+        ).get(pk=delivery_id)
 
     except IncidentNotificationDelivery.DoesNotExist:
         logger.warning(
@@ -66,15 +67,11 @@ def notify_administrators_incident_created(
             "incident_notification_already_final",
             extra={
                 "task_id": task_id,
-                "delivery_id": str(
-                    delivery.pk
-                ),
+                "delivery_id": str(delivery.pk),
                 "incident_id": str(
-                    delivery.incident_id # type: ignore
+                    delivery.incident_id  # type: ignore
                 ),
-                "delivery_status": (
-                    delivery.status
-                ),
+                "delivery_status": (delivery.status),
             },
         )
         return
@@ -95,9 +92,7 @@ def notify_administrators_incident_created(
     )
 
     if not recipients:
-        delivery.status = (
-            IncidentNotificationDelivery.Status.SKIPPED
-        )
+        delivery.status = IncidentNotificationDelivery.Status.SKIPPED
         delivery.last_error = ""
         delivery.save(
             update_fields=[
@@ -107,28 +102,24 @@ def notify_administrators_incident_created(
             ]
         )
 
+        NOTIFICATION_DELIVERIES_TOTAL.labels(
+            result="skipped",
+        ).inc()
+
         logger.info(
             "incident_notification_skipped",
             extra={
                 "task_id": task_id,
-                "delivery_id": str(
-                    delivery.pk
-                ),
-                "incident_id": str(
-                    incident.pk
-                ),
-                "delivery_status": (
-                    delivery.status
-                ),
+                "delivery_id": str(delivery.pk),
+                "incident_id": str(incident.pk),
+                "delivery_status": (delivery.status),
                 "recipient_count": 0,
             },
         )
 
         return
 
-    IncidentNotificationDelivery.objects.filter(
-        pk=delivery.pk
-    ).update(
+    IncidentNotificationDelivery.objects.filter(pk=delivery.pk).update(
         attempts=F("attempts") + 1
     )
 
@@ -140,10 +131,7 @@ def notify_administrators_incident_created(
 
     try:
         send_mail(
-            subject=(
-                f"New incident: "
-                f"{incident.title}"
-            ),
+            subject=(f"New incident: {incident.title}"),
             message=(
                 f"A new {incident.severity} "
                 f"severity incident has been "
@@ -161,9 +149,7 @@ def notify_administrators_incident_created(
         smtplib.SMTPException,
         SoftTimeLimitExceeded,
     ) as exc:
-        delivery.last_error = (
-            f"{type(exc).__name__}: {exc}"
-        )[:2000]
+        delivery.last_error = (f"{type(exc).__name__}: {exc}")[:2000]
 
         delivery.save(
             update_fields=[
@@ -172,40 +158,30 @@ def notify_administrators_incident_created(
             ]
         )
 
-        countdown = retry_delay(
-            self.request.retries
-        )
+        countdown = retry_delay(self.request.retries)
+
+        NOTIFICATION_RETRIES_TOTAL.inc()
 
         logger.warning(
             "incident_notification_retrying",
             extra={
                 "task_id": task_id,
-                "delivery_id": str(
-                    delivery.pk
-                ),
+                "delivery_id": str(delivery.pk),
                 "incident_id": str(
-                    incident.pk # type: ignore
+                    incident.pk  # type: ignore
                 ),
-                "attempt": (
-                    delivery.attempts
-                ),
-                "error_type": (
-                    type(exc).__name__
-                ),
-                "retry_in_seconds": (
-                    countdown
-                ),
+                "attempt": (delivery.attempts),
+                "error_type": (type(exc).__name__),
+                "retry_in_seconds": (countdown),
             },
         )
 
         raise self.retry(
             exc=exc,
             countdown=countdown,
-        )
+        ) from exc
 
-    delivery.status = (
-        IncidentNotificationDelivery.Status.SENT
-    )
+    delivery.status = IncidentNotificationDelivery.Status.SENT
     delivery.sent_at = timezone.now()
     delivery.last_error = ""
 
@@ -218,22 +194,16 @@ def notify_administrators_incident_created(
         ]
     )
 
+    NOTIFICATION_DELIVERIES_TOTAL.labels(result="sent").inc()
+
     logger.info(
         "incident_notification_sent",
         extra={
             "task_id": task_id,
-            "delivery_id": str(
-                delivery.pk
-            ),
-            "incident_id": str(
-                incident.pk
-            ),
-            "delivery_status": (
-                delivery.status
-            ),
+            "delivery_id": str(delivery.pk),
+            "incident_id": str(incident.pk),
+            "delivery_status": (delivery.status),
             "attempt": delivery.attempts,
-            "recipient_count": len(
-                recipients
-            ),
+            "recipient_count": len(recipients),
         },
     )

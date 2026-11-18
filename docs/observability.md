@@ -51,3 +51,12 @@ header:
 
 ```text
 X-Request-ID
+
+## Metrics
+
+The service exposes Prometheus-compatible application metrics.
+
+The Django process exposes metrics through:
+
+```text
+GET /metrics/
