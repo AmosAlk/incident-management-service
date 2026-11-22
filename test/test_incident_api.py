@@ -1,6 +1,7 @@
 import pytest
 from django.contrib.auth.models import User
 from django.urls import reverse
+from prometheus_client import REGISTRY
 from rest_framework import status
 from rest_framework.test import APIClient
 
@@ -28,6 +29,11 @@ def test_analyst_can_create_incident() -> None:
     # not strictly necessary for this test.
     client.force_authenticate(user=user)
 
+    before = REGISTRY.get_sample_value("incident_service_incidents_created_total")
+
+    if before is None:
+        before = 0.0
+
     response = client.post(
         # Describes the endpoint named list-create from incidents.
         reverse("incidents:list-create"),
@@ -39,6 +45,11 @@ def test_analyst_can_create_incident() -> None:
         },
         format="json",
     )
+
+    after = REGISTRY.get_sample_value("incident_service_incidents_created_total")
+
+    assert after is not None
+    assert after == before + 1
 
     assert response.status_code == status.HTTP_201_CREATED
 

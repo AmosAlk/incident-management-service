@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Lint and test
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: incident_management
+          POSTGRES_USER: incident
+          POSTGRES_PASSWORD: incident
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U incident -d incident_management"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DJANGO_ENVIRONMENT: development
+      DJANGO_SECRET_KEY: ci-only-secret-key
+
+      POSTGRES_DB: incident_management
+      POSTGRES_USER: incident
+      POSTGRES_PASSWORD: incident
+      POSTGRES_HOST: 127.0.0.1
+      POSTGRES_PORT: 5432
+
+      OIDC_ISSUER: http://localhost:8080/realms/test
+      OIDC_AUDIENCE: incident-management-service
+      OIDC_JWKS_URL: http://localhost:8080/realms/test/protocol/openid-connect/certs
+
+      RABBITMQ_USER: guest
+      RABBITMQ_PASSWORD: guest
+      RABBITMQ_HOST: 127.0.0.1
+      RABBITMQ_PORT: 5672
+      RABBITMQ_VHOST: incident_ops
+
+      OTEL_TRACING_ENABLED: "false"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Run Ruff
+        run: uv run ruff check .
+
+      - name: Run Django system checks
+        run: uv run python manage.py check
+
+      - name: Check for missing migrations
+        run: uv run python manage.py makemigrations --check --dry-run
+
+      - name: Run tests
+        run: uv run pytest
