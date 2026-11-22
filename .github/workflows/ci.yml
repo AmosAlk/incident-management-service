@@ -54,7 +54,7 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@3d3c42e21bd5f1d3a88c946a9adf6a6b8968076e # v7.0.1
 
       - name: Install uv
         uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
@@ -73,5 +73,11 @@ jobs:
       - name: Check for missing migrations
         run: uv run python manage.py makemigrations --check --dry-run
 
-      - name: Run tests
-        run: uv run pytest
+      - name: Run tests with coverage
+        run: >
+          uv run pytest
+          --cov=.
+          --cov-report=term-missing
+          
+      - name: Apply database migrations
+        run: uv run python manage.py migrate --noinput
