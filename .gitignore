@@ -28,3 +28,13 @@ Thumbs.db
 
 # Miscallaneous
 commands.txt
+
+# Terraform local state and working files
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+.terraform.tfstate.lock.info
+crash.log
+crash.*.log
+*.tfvars
+*.tfvars.json
