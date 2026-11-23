@@ -8,6 +8,7 @@ dependencies = [
     "celery>=5.7,<5.8",
     "django>=5.2,<5.3",
     "djangorestframework>=3.18.3,<3.19",
+    "gunicorn>=27.0.1,<28",
     "opentelemetry-exporter-otlp-proto-http>=1.45.2",
     "opentelemetry-instrumentation-celery>=0.66b2",
     "opentelemetry-instrumentation-django>=0.66b2",
